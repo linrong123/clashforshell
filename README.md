@@ -1,4 +1,4 @@
-基于bash的clash脚本，用于快速配置clash，主要解决linux命令行的配置问题。
+linux下用的clash脚本，用于快速配置clash，主要解决linux没有gui时clash的配置问题。
 
 # 使用说明
 ```shell
