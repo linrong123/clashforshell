@@ -258,11 +258,8 @@ download_url() {
     read -p "输入订阅地址: " url
     local config_dir="$(dirname "$(readlink -f "$0")")/config"
     mkdir -p "$config_dir"
-    filename=$(wget --content-disposition -P "$profiles_dir" "$url" 2>&1 | grep -oP "filename=\"\K[^\"]+")
-    if [ -z "$filename" ]; then
-        # 如果文件名为空，使用默认文件名 config+时间戳.yaml
-        filename="config$(date +%s).yaml"
-    fi
+    wget --content-disposition -P "$profiles_dir" "$url"
+    filename=$(ls -t "$profiles_dir" | head -n 1)
     set_config "default" "$filename"
     show_main_menu
 }
@@ -327,10 +324,9 @@ show_main_menu(){
     fi
 
     if is_clash_running; then
-        local current_profile="${config_array["default"]}"
-        echo -e "\e[32m1. 重启Clash(正在运行，配置文件: $current_profile)\e[0m"
+        echo -e "\e[32m1. 重启Clash(正在运行，配置文件:  ${config_array["default"]})\e[0m"
     else
-        echo "1. 启动clash"
+        echo "1. 启动clash(配置文件: ${config_array["default"]})"
     fi
 
     echo "2. 停止clash"
