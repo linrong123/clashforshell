@@ -338,10 +338,12 @@ show_main_menu(){
     case $choice in
     1)
         start_clash
+        sleep 1
         show_main_menu
         ;;
     2)
         stop_clash
+        sleep 1
         show_main_menu
         ;;
     3)  show_groups_menu
