@@ -85,6 +85,12 @@ jq(){
     chmod +x $core_dir/jq
     "$core_dir/jq" "$@"
 }
+# 创建分割行
+create_line(){
+    echo ""
+    echo ""
+    echo "===================================="
+}
 
 # ==================== 配置处理 ====================
 # 函数：读取config.ini到数组
@@ -117,7 +123,6 @@ set_config() {
     local key=$1
     local value=$2
     config_array["$key"]=$value
-    echo "设置 $key=$value"
     write_array_to_config
 }
 
@@ -258,7 +263,6 @@ download_url() {
         # 如果文件名为空，使用默认文件名 config+时间戳.yaml
         filename="config$(date +%s).yaml"
     fi
-    echo "下载文件名为：$filename"
     set_config "default" "$filename"
     show_main_menu
 }
@@ -309,6 +313,7 @@ is_clash_running() {
 # ==================== 主菜单 ====================
 # 显示主菜单供用户选择，输入相应的菜单项执行相应的函数
 show_main_menu(){
+    create_line
     # 如果config目录除了.config.yaml没有其他的配置文件，则提示用户下载配置文件
     if [ "$(ls -I .config.yaml "$profiles_dir" | wc -l)" -eq 0 ]; then
         echo "还没有任何配置文件，请先下载配置文件，或把配置文件放到$config_dir 目录下并重启此程序"
@@ -362,6 +367,7 @@ show_main_menu(){
     esac
 }
 show_profiles_menu(){
+    create_line
     echo "请选择使用哪个配置："
     local files=($(ls -I .config.yaml "$profiles_dir"))
     local current_profile="${config_array["default"]}"
@@ -396,6 +402,7 @@ show_profiles_menu(){
 }
 
 show_groups_menu(){
+    create_line
     echo "请选择要修改哪个线路组："
     # {"proxies":[{"alive":true,"all":["日常推荐1-台湾","日常推荐2-香港","日常推荐3-香港","日常推荐4-台湾","香港","台湾","新加坡","新加坡2","日本","日本2","美国","美国2","美国3","欧洲-英国","韩国","韩国2","加拿大","俄罗斯","土耳其","印度","阿根廷-小带宽","澳大利亚-悉尼","马来西亚","菲律宾（测试）","印尼（测试）","越南（测试）","泰国（测试）"],"extra":{},"hidden":false,"history":[],"icon":"","name":"Proxy","now":"日常推荐1-台湾","tfo":false,"type":"Selector","udp":true,"xudp":false},{"alive":true,"all":["DIRECT","REJECT","日常推荐1-台湾","日常推荐2-香港","日常推荐3-香港","日常推荐4-台湾","香港","台湾","新加坡","新加坡2","日本","日本2","美国","美国2","美国3","欧洲-英国","韩国","韩国2","加拿大","俄罗斯","土耳其","印度","阿根廷-小带宽","澳大利亚-悉尼","马来西亚","菲律宾（测试）","印尼（测试）","越南（测试）","泰国（测试）","Proxy"],"extra":{},"hidden":false,"history":[],"icon":"","name":"GLOBAL","now":"DIRECT","tfo":false,"type":"Selector","udp":true,"xudp":false}]}
     local response=$(get_request "/group")
@@ -421,6 +428,7 @@ show_groups_menu(){
 }
 
 show_proxies_menu(){
+    create_line
     local group_name=$1
     echo "${group_name}要使用哪条线路："
     local response=$(get_request "/group")
@@ -450,6 +458,7 @@ show_proxies_menu(){
     show_proxies_menu "$group_name"
 }
 show_settings_menu(){
+    create_line
     echo "选择你要进行的设置："
     # 判断设置系统代理
     if [ -z "$(check_proxy)" ]; then
