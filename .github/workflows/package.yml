@@ -13,11 +13,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Create temporary directory
+      run: mkdir temp
+
     - name: Create tar.gz package
-      run: tar --exclude='./.git' --exclude='./.github' --exclude='./.gitignore' --exclude='./.gitattributes' --exclude='./clashforshell.tar.gz' -czvf clashforshell.tar.gz .
-      
+      run: |
+        tar --exclude='./.git' --exclude='./.github' --exclude='./.gitignore' --exclude='./.gitattributes' --exclude='./temp' -czvf temp/clashforshell.tar.gz .
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: clashforshell-source-code
-        path: clashforshell.tar.gz
+        path: temp/clashforshell.tar.gz
