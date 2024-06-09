@@ -14,8 +14,10 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Create tar.gz package
-      run: tar -czvf clashforshell.tar.gz .
-
+      run: tar --exclude-vcs -czvf clashforshell.tar.gz .
+      # 或者使用下面的命令来排除 .git 目录
+      # run: tar --exclude='./.git' -czvf clashforshell.tar.gz .
+      
     - name: Upload artifact
       uses: actions/upload-artifact@v2
       with:
