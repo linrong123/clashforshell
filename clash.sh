@@ -304,7 +304,46 @@ is_clash_running() {
         return 1
     fi
 }
+# 线路延迟测试，传入一个线路名称
+test_delay() {
+    local proxy=$1
+    local response=$(get_request "/proxies/$proxy/delay?url=http://www.gstatic.com/generate_204&timeout=2000")
+    local delay=$(echo "$response" | jq -r '.delay')
+    echo "$delay"
+}
 
+
+# 输出clash目前的状态
+show_clash_status(){
+    if is_clash_running; then
+        echo -e "\e[32mClash正在运行，配置文件:  ${config_array["default"]}\e[0m"
+    else
+        echo -e "\e[31mClash未运行,配置文件:  ${config_array["default"]}\e[0m"
+    fi
+    echo "当前各个线路组的线路选择："
+    local response=$(get_request "/group")
+    local groups
+    mapfile -t groups < <(echo "$response" | jq -r '.proxies[] | .name')
+    # 如果group数组不为空，则输出线路组
+    if [ ${#groups[@]} -eq 0 ]; then
+        echo ""
+    else
+        for i in "${!groups[@]}"; do
+            local now=$(echo "$response" | jq -r ".proxies[$i].now")
+            if [[ $now == "DIRECT" ]]; then
+                echo "${groups[i]} (当前线路: $now)"
+            else
+                delay=$(test_delay ${now})
+                if [[ $delay == "null" ]]; then
+                    echo -e "${groups[i]} (当前线路: $now, 延迟: \033[31mtimeout\033[0m)"
+                else
+                    echo -e "${groups[i]} (当前线路: $now, 延迟: \033[32m ${delay}\033[0mms)"
+                fi
+            fi
+        done
+    fi
+    echo "------------------------------------"
+}
 
 
 # ==================== 主菜单 ====================
@@ -322,11 +361,12 @@ show_main_menu(){
         show_profiles_menu
         return
     fi
-
+    show_clash_status
+    
     if is_clash_running; then
-        echo -e "\e[32m1. 重启Clash(正在运行，配置文件:  ${config_array["default"]})\e[0m"
+        echo "1. 重启Clash"
     else
-        echo "1. 启动clash(配置文件: ${config_array["default"]})"
+        echo "1. 启动clash"
     fi
 
     echo "2. 停止clash"
@@ -403,13 +443,24 @@ show_groups_menu(){
     create_line
     echo "请选择要修改哪个线路组："
     # {"proxies":[{"alive":true,"all":["日常推荐1-台湾","日常推荐2-香港","日常推荐3-香港","日常推荐4-台湾","香港","台湾","新加坡","新加坡2","日本","日本2","美国","美国2","美国3","欧洲-英国","韩国","韩国2","加拿大","俄罗斯","土耳其","印度","阿根廷-小带宽","澳大利亚-悉尼","马来西亚","菲律宾（测试）","印尼（测试）","越南（测试）","泰国（测试）"],"extra":{},"hidden":false,"history":[],"icon":"","name":"Proxy","now":"日常推荐1-台湾","tfo":false,"type":"Selector","udp":true,"xudp":false},{"alive":true,"all":["DIRECT","REJECT","日常推荐1-台湾","日常推荐2-香港","日常推荐3-香港","日常推荐4-台湾","香港","台湾","新加坡","新加坡2","日本","日本2","美国","美国2","美国3","欧洲-英国","韩国","韩国2","加拿大","俄罗斯","土耳其","印度","阿根廷-小带宽","澳大利亚-悉尼","马来西亚","菲律宾（测试）","印尼（测试）","越南（测试）","泰国（测试）","Proxy"],"extra":{},"hidden":false,"history":[],"icon":"","name":"GLOBAL","now":"DIRECT","tfo":false,"type":"Selector","udp":true,"xudp":false}]}
+
     local response=$(get_request "/group")
     local groups
     mapfile -t groups < <(echo "$response" | jq -r '.proxies[] | .name')
     for i in "${!groups[@]}"; do
         local now=$(echo "$response" | jq -r ".proxies[$i].now")
-        echo "$((i + 1)). ${groups[i]} (当前线路: $now)"
+        if [[ $now == "DIRECT" ]]; then
+            echo "$((i + 1)). ${groups[i]} (当前线路: $now)"
+        else
+            delay=$(test_delay ${now})
+            if [[ $delay == "null" ]]; then
+                echo -e "$((i + 1)). ${groups[i]} (当前线路: $now, 延迟: \033[31mtimeout\033[0m)"
+            else
+                echo -e "$((i + 1)). ${groups[i]} (当前线路: $now, 延迟: \033[32m${delay}\033[0mms)"
+            fi
+        fi
     done
+
     echo "0. 返回主菜单"
     read -p "请选择线路组序号: " choice
     if [ "$choice" -eq 0 ]; then
@@ -435,13 +486,20 @@ show_proxies_menu(){
     for i in "${!proxies[@]}"; do
         local now=$(echo "$response" | jq -r ".proxies[] | select(.name == \"$group_name\") | .now")
         # 获取线路延迟
-        # local delay_response=$(get_request "/proxies/${proxies[i]}/delay?url=http://www.gstatic.com/generate_204&timeout=1000")
-        # local delay=$(echo "$delay_response" | jq -r '.delay')
-
-        if [ "${proxies[i]}" = "$now" ]; then
-            echo -e "\e[32m$((i + 1)). ${proxies[i]} (当前线路)\e[0m"
+        delay=$(test_delay ${proxies[i]})
+        if [[ $delay == "null" ]]; then
+            delaystr="\033[31mtimeout\033[0m"
         else
+            delaystr="\033[32m${delay}\033[0mms"
+        fi
+
+        # direct线路
+        if [ "${proxies[i]}" = "DIRECT" ]; then
             echo -e "$((i + 1)). ${proxies[i]}"
+        elif [ "${proxies[i]}" = "$now" ]; then
+            echo -e "\e[32m$((i + 1)). ${proxies[i]} (当前线路)\e[0m \t延迟: $delaystr"
+        else
+            echo -e "$((i + 1)). ${proxies[i]} \t延迟: $delaystr"
         fi
     done
     echo "0. 返回主菜单"
