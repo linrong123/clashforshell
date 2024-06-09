@@ -19,5 +19,5 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v2
       with:
-        name: source-code
+        name: clashforshell-source-code
         path: clashforshell.tar.gz
