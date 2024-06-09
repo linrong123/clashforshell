@@ -16,12 +16,20 @@ jobs:
     - name: Create temporary directory
       run: mkdir temp
 
+    - name: Move repository to temporary directory
+      run: |
+        repo_name=$(basename "$GITHUB_REPOSITORY")
+        mkdir temp/$repo_name
+        shopt -s extglob
+        cp -r !(temp) temp/$repo_name
+
     - name: Create tar.gz package
       run: |
-        tar --exclude='./.git' --exclude='./.github' --exclude='./.gitignore' --exclude='./.gitattributes' --exclude='./temp' -czvf temp/clashforshell.tar.gz .
+        repo_name=$(basename "$GITHUB_REPOSITORY")
+        tar -czvf temp/clashforshell.tar.gz -C temp $repo_name
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: clashforshell
+        name: clashforshell-source-code
         path: temp/clashforshell.tar.gz
