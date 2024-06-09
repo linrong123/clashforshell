@@ -255,7 +255,7 @@ selecte_profile() {
 
 # 下载配置文件
 download_url() {
-    read -p "输入订阅地址: " url
+    read -p "输入订阅地址: " -e url
     local config_dir="$(dirname "$(readlink -f "$0")")/config"
     mkdir -p "$config_dir"
     wget --content-disposition -P "$profiles_dir" "$url"
@@ -434,10 +434,14 @@ show_proxies_menu(){
     mapfile -t proxies < <(echo "$response" | jq -r ".proxies[] | select(.name == \"$group_name\") | .all[]")
     for i in "${!proxies[@]}"; do
         local now=$(echo "$response" | jq -r ".proxies[] | select(.name == \"$group_name\") | .now")
+        # 获取线路延迟
+        # local delay_response=$(get_request "/proxies/${proxies[i]}/delay?url=http://www.gstatic.com/generate_204&timeout=1000")
+        # local delay=$(echo "$delay_response" | jq -r '.delay')
+
         if [ "${proxies[i]}" = "$now" ]; then
             echo -e "\e[32m$((i + 1)). ${proxies[i]} (当前线路)\e[0m"
         else
-            echo "$((i + 1)). ${proxies[i]}"
+            echo -e "$((i + 1)). ${proxies[i]}"
         fi
     done
     echo "0. 返回主菜单"
