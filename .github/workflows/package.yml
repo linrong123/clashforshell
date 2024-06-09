@@ -1,0 +1,23 @@
+name: Package Source Code
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Create tar.gz package
+      run: tar -czvf clashforshell.tar.gz .
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: source-code
+        path: clashforshell.tar.gz
