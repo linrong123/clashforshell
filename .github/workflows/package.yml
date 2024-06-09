@@ -11,24 +11,13 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
-
-    - name: Create temporary directory
-      run: mkdir -p /tmp/clashforshell
-
-    - name: Copy files to temporary directory
-      run: |
-        shopt -s extglob dotglob
-        cp -r !(.|.git|.github|.gitignore|.gitattributes) /tmp/clashforshell
+      uses: actions/checkout@v4
 
     - name: Create tar.gz package
-      run: |
-        cd /tmp/clashforshell
-        tar -czvf clashforshell.tar.gz .
-        mv clashforshell.tar.gz $GITHUB_WORKSPACE
-
+      run: tar --exclude='./.git' --exclude='./.github' --exclude='./.gitignore' --exclude='./.gitattributes' -czvf clashforshell.tar.gz .
+      
     - name: Upload artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: clashforshell-source-code
         path: clashforshell.tar.gz
