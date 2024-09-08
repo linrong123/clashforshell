@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# 判断是不是sudo或者root权限
+if [ $(id -u) -ne 0 ]; then
+    echo "请使用sudo或者root权限运行此脚本"
+    exit 1
+fi
+
 # cd 到脚本所在目录
 cd "$(dirname "$(readlink -f "$0")")"
 
@@ -12,6 +18,8 @@ core_dir="$(dirname "$(readlink -f "$0")")/core"
 declare -A config_array  # 声明关联数组
 
 # ==================== 初始化 ====================
+# 获取脚本的完整路径
+SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
 
 # 如果home_dir不存在，则创建
 if [[ ! -d $home_dir ]]; then
@@ -209,6 +217,7 @@ replace_config() {
     yq eval -i ".mixed-port = $mixed_port" "$home_dir/$profile"
     yq eval -i ".port = $port" "$home_dir/$profile"
     yq eval -i ".socks-port = $socks_port" "$home_dir/$profile"
+    yq eval -i '.log-level = "debug"' "$home_dir/$profile"
 
     # 使用yq的文件合并功能来更新dns和tun块
     yq eval -i ". *+ load(\"$init_dir/dns.yaml\")" "$home_dir/$profile"
@@ -223,7 +232,8 @@ start_clash() {
     replace_config
     echo "启动clash: $profile"
     chmod +x $core_dir/mihomo-core
-    setsid $core_dir/mihomo-core -f "$home_dir/$profile" >log.txt 2>&1 &
+    echo "$core_dir/mihomo-core -f $home_dir/$profile" > log.txt
+    setsid $core_dir/mihomo-core -f "$home_dir/$profile" >> log.txt 2>&1 &
     disown $!
 
 
@@ -317,30 +327,31 @@ test_delay() {
 show_clash_status(){
     if is_clash_running; then
         echo -e "\e[32mClash正在运行，配置文件:  ${config_array["default"]}\e[0m"
+        echo "当前各个线路组的线路选择："
+        sleep 1
+        local response=$(get_request "/group")
+        local groups
+        mapfile -t groups < <(echo "$response" | jq -r '.proxies[] | .name')
+        # 如果group数组不为空，则输出线路组
+        if [ ${#groups[@]} -eq 0 ]; then
+            echo ""
+        else
+            for i in "${!groups[@]}"; do
+                local now=$(echo "$response" | jq -r ".proxies[$i].now")
+                if [[ $now == "DIRECT" ]]; then
+                    echo "${groups[i]} (当前线路: $now)"
+                else
+                    delay=$(test_delay ${now})
+                    if [[ $delay == "null" ]]; then
+                        echo -e "${groups[i]} (当前线路: $now, 延迟: \033[31mtimeout\033[0m)"
+                    else
+                        echo -e "${groups[i]} (当前线路: $now, 延迟: \033[32m ${delay}\033[0mms)"
+                    fi
+                fi
+            done
+        fi
     else
         echo -e "\e[31mClash未运行,配置文件:  ${config_array["default"]}\e[0m"
-    fi
-    echo "当前各个线路组的线路选择："
-    local response=$(get_request "/group")
-    local groups
-    mapfile -t groups < <(echo "$response" | jq -r '.proxies[] | .name')
-    # 如果group数组不为空，则输出线路组
-    if [ ${#groups[@]} -eq 0 ]; then
-        echo ""
-    else
-        for i in "${!groups[@]}"; do
-            local now=$(echo "$response" | jq -r ".proxies[$i].now")
-            if [[ $now == "DIRECT" ]]; then
-                echo "${groups[i]} (当前线路: $now)"
-            else
-                delay=$(test_delay ${now})
-                if [[ $delay == "null" ]]; then
-                    echo -e "${groups[i]} (当前线路: $now, 延迟: \033[31mtimeout\033[0m)"
-                else
-                    echo -e "${groups[i]} (当前线路: $now, 延迟: \033[32m ${delay}\033[0mms)"
-                fi
-            fi
-        done
     fi
     echo "------------------------------------"
 }
@@ -379,7 +390,7 @@ show_main_menu(){
     1)
         start_clash
         sleep 1
-        show_main_menu
+        exec bash "$SCRIPT_PATH"
         ;;
     2)
         stop_clash
