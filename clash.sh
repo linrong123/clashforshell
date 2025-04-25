@@ -56,7 +56,7 @@ LOG_LEVEL_ERROR=3
 CURRENT_LOG_LEVEL=$LOG_LEVEL_INFO
 
 # 日志文件
-LOG_FILE="/tmp/clash-shell.log"
+LOG_FILE="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/clash-shell.log"
 
 # 日志函数
 log() {
@@ -72,7 +72,7 @@ log() {
         $LOG_LEVEL_ERROR) level_str="ERROR" ;;
         esac
 
-        echo "[$timestamp] $level_str: $message" | tee -a "$LOG_FILE"
+        echo "[$timestamp] $level_str: $message" | tee -a "$LOG_FILE" 2>/dev/null || echo "[$timestamp] $level_str: $message"
     fi
 }
 
@@ -110,8 +110,11 @@ cleanup_on_error() {
 
 # 初始化日志
 init_logging() {
+    # 创建日志目录和文件（如果不存在）
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+
     # 创建或清空日志文件
-    : >"$LOG_FILE"
+    touch "$LOG_FILE" 2>/dev/null && : >"$LOG_FILE" 2>/dev/null || true
 
     # 设置日志文件权限
     chmod 644 "$LOG_FILE" 2>/dev/null || true
@@ -169,11 +172,12 @@ cd "$(dirname "$(readlink -f "$0")")"
 # 处理开机启动的参数在脚本末尾
 
 # ==================== 变量定义 ====================
-config_file="config.ini"
+# 将配置文件路径修改为脚本所在目录，解决权限问题
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+config_file="$script_dir/config.ini"
 declare -A config_array # 声明关联数组
 
 # 定义基础目录
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 init_dir="$script_dir/init"
 core_dir="$script_dir/core"
 
@@ -202,12 +206,17 @@ check_setsid() {
 # ==================== 初始化 ====================
 # 初始化配置文件
 init_config_file() {
+    # 确保配置文件所在目录存在
+    mkdir -p "$(dirname "$config_file")" 2>/dev/null || sudo mkdir -p "$(dirname "$config_file")" 2>/dev/null
+
     # 确保配置文件存在
     if [ ! -f "$config_file" ]; then
-        touch "$config_file" 2>/dev/null || {
+        touch "$config_file" 2>/dev/null || sudo touch "$config_file" 2>/dev/null || {
             log $LOG_LEVEL_ERROR "无法创建配置文件: $config_file"
             return 1
         }
+        # 设置适当的权限
+        chmod 644 "$config_file" 2>/dev/null || sudo chmod 644 "$config_file" 2>/dev/null
         # 写入默认配置
         cat >"$config_file" <<EOF
 # Clash配置文件
@@ -218,58 +227,6 @@ socks-port=7892
 EOF
         log $LOG_LEVEL_INFO "创建默认配置文件: $config_file"
     fi
-    return 0
-}
-
-# 初始化脚本环境
-init_script() {
-    log $LOG_LEVEL_INFO "开始初始化脚本环境..."
-
-    # 初始化配置文件
-    if ! init_config_file; then
-        log $LOG_LEVEL_ERROR "初始化配置文件失败"
-        return 1
-    fi
-
-    # 检查必要的系统目录权限
-    if ! check_directory_permissions "$init_dir" false; then
-        log $LOG_LEVEL_ERROR "初始化目录权限检查失败: $init_dir"
-        return 1
-    fi
-
-    if ! check_directory_permissions "$script_dir" false; then
-        log $LOG_LEVEL_ERROR "脚本目录权限检查失败: $script_dir"
-        return 1
-    fi
-
-    # 初始化配置目录
-    if ! init_config_dirs; then
-        log $LOG_LEVEL_ERROR "初始化配置目录失败"
-        return 1
-    fi
-
-    # 检测并复制对应架构的二进制文件
-    log $LOG_LEVEL_INFO "检测系统架构..."
-    arch=$(detect_arch)
-    if [ "$?" -eq 0 ]; then
-        log $LOG_LEVEL_INFO "系统架构: $arch"
-        if ! copy_arch_binaries; then
-            log $LOG_LEVEL_ERROR "复制二进制文件失败"
-            return 1
-        fi
-    else
-        log $LOG_LEVEL_ERROR "无法确定系统架构"
-        return 1
-    fi
-
-    # 读取配置
-    read_config_to_array || {
-        log $LOG_LEVEL_ERROR "读取配置文件失败"
-        return 1
-    }
-    set_default_config
-
-    log $LOG_LEVEL_INFO "脚本初始化完成"
     return 0
 }
 
@@ -469,9 +426,26 @@ create_line() {
 # ==================== 配置处理 ====================
 # 函数：读取config.ini到数组
 read_config_to_array() {
+    # 检查配置文件是否存在
+    if [ ! -f "$config_file" ]; then
+        log $LOG_LEVEL_WARN "配置文件不存在，将创建默认配置"
+        init_config_file
+        return $?
+    fi
+
+    # 检查是否有读取权限
+    if [ ! -r "$config_file" ]; then
+        # 尝试修改权限
+        chmod 644 "$config_file" 2>/dev/null || sudo chmod 644 "$config_file" 2>/dev/null || {
+            log $LOG_LEVEL_ERROR "无法获取配置文件读取权限: $config_file"
+            return 1
+        }
+    fi
+
+    # 读取配置文件
     while IFS="=" read -r key value; do
-        # 忽略空行
-        if [[ -z $key ]]; then
+        # 忽略空行和注释行
+        if [[ -z $key || $key == \#* ]]; then
             continue
         fi
         # 去除首尾空格
@@ -480,16 +454,36 @@ read_config_to_array() {
         # 添加到关联数组中
         config_array["$key"]=$value
     done <"$config_file"
+
+    return 0
 }
 
 # 函数：将数组写回config.ini
 write_array_to_config() {
-    echo "" >$config_file # 清空文件
-    # 遍历关联数组并输出到文件
+    # 确保有权限写入配置文件
+    if [ ! -w "$config_file" ]; then
+        # 尝试修改权限
+        chmod 644 "$config_file" 2>/dev/null || sudo chmod 644 "$config_file" 2>/dev/null || {
+            log $LOG_LEVEL_ERROR "无法获取配置文件写入权限: $config_file"
+            return 1
+        }
+    fi
+
+    # 创建临时文件并写入
+    local temp_file=$(mktemp)
     for key in "${!config_array[@]}"; do
-        # 写入键值对
-        echo "$key=${config_array[$key]}" >>"$config_file"
+        # 写入键值对到临时文件
+        echo "$key=${config_array[$key]}" >>"$temp_file"
     done
+
+    # 替换原文件
+    mv "$temp_file" "$config_file" 2>/dev/null || sudo mv "$temp_file" "$config_file" 2>/dev/null || {
+        log $LOG_LEVEL_ERROR "无法更新配置文件: $config_file"
+        rm "$temp_file" 2>/dev/null
+        return 1
+    }
+
+    return 0
 }
 
 # 设置数组指定键的值，并写入配置文件
@@ -675,6 +669,10 @@ start_clash() {
     fi
 
     # 7. 启动进程，使用setsid创建新会话，完全脱离当前终端会话
+    mkdir -p "$log_dir" 2>/dev/null || sudo mkdir -p "$log_dir" 2>/dev/null
+    touch "$log_dir/clash.log" 2>/dev/null || sudo touch "$log_dir/clash.log" 2>/dev/null
+    sudo chmod 777 "$log_dir" "$log_dir/clash.log" 2>/dev/null
+
     setsid sudo "$core_dir/mihomo-core" -f "$home_dir/$profile" -d "$home_dir" >"$log_dir/clash.log" 2>&1 &
     local pid=$!
 
@@ -697,7 +695,8 @@ start_clash() {
 
 # 停止clash
 stop_clash() {
-    pkill -f "mihomo-core"
+    # 使用sudo提升权限
+    sudo pkill -f "mihomo-core" 2>/dev/null || pkill -f "mihomo-core" 2>/dev/null
     echo "clash已停止"
 }
 
@@ -837,7 +836,8 @@ is_autostart_enabled() {
     local init_system=$(detect_init_system)
     case $init_system in
     "systemd")
-        systemctl --user is-enabled clash.service &>/dev/null
+        # 所有系统都使用系统级服务
+        systemctl is-enabled clash.service &>/dev/null
         return $?
         ;;
     "openrc")
@@ -863,9 +863,9 @@ enable_autostart() {
 
     case $init_system in
     "systemd")
-        # 创建systemd用户服务
-        mkdir -p ~/.config/systemd/user/
-        cat >~/.config/systemd/user/clash.service <<EOF
+        # 所有系统都使用系统级服务（需要root权限）
+        sudo mkdir -p /etc/systemd/system/
+        sudo tee /etc/systemd/system/clash.service >/dev/null <<EOF
 [Unit]
 Description=Clash Proxy Client
 After=network.target
@@ -873,14 +873,14 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStartPre=/bin/chmod +x $script_path
-ExecStart=/usr/bin/sudo $script_path autostart
+ExecStart=$script_path autostart
 RemainAfterExit=yes
 Restart=on-failure
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
-        systemctl --user enable clash.service
+        sudo systemctl enable clash.service
         ;;
     "openrc")
         # 创建OpenRC服务
@@ -961,8 +961,9 @@ disable_autostart() {
 
     case $init_system in
     "systemd")
-        systemctl --user disable clash.service 2>/dev/null
-        rm -f ~/.config/systemd/user/clash.service
+        # 所有系统都使用系统级服务
+        sudo systemctl disable clash.service 2>/dev/null
+        sudo rm -f /etc/systemd/system/clash.service
         ;;
     "openrc")
         sudo rc-update del clash default
@@ -1307,6 +1308,13 @@ main_loop() {
     # 测试读取配置文件
     read_config_to_array
     set_default_config
+
+    # 进入主循环前先初始化配置文件
+    if ! init_config_file; then
+        log $LOG_LEVEL_ERROR "无法初始化配置文件，请检查权限"
+        echo "错误：无法初始化配置文件，请检查权限或手动创建配置文件: $config_file"
+        exit 1
+    fi
 
     # 进入主循环
     while true; do
